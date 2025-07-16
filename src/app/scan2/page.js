@@ -19,19 +19,24 @@ export default function ScannerPage() {
                 const { BrowserMultiFormatReader } = await import('@zxing/browser');
                 readerRef.current = new BrowserMultiFormatReader();
 
-                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
                     setIsSupported(false);
                     setError('Camera access is not supported in this browser');
                     return;
                 }
 
-                const cameraList = await readerRef.current.listVideoInputDevices();
-                setCameras(cameraList);
-                if (cameraList.length > 0) {
-                    setSelectedCamera(cameraList[0].deviceId);
+                try {
+                    const devices = await navigator.mediaDevices.enumerateDevices();
+                    const videoDevices = devices.filter(device => device.kind === 'videoinput');
+                    setCameras(videoDevices);
+                    if (videoDevices.length > 0) {
+                        setSelectedCamera(videoDevices[0].deviceId);
+                    }
+                } catch (cameraErr) {
+                    setError('Failed to access cameras: ' + cameraErr.message);
                 }
             } catch (err) {
-                setError(`Failed to initialize scanner: ${err.message}`);
+                setError('Failed to initialize scanner: ' + err.message);
                 setIsSupported(false);
             }
         };
@@ -45,7 +50,6 @@ export default function ScannerPage() {
         };
     }, []);
 
-    // Start/stop camera scanner
     useEffect(() => {
         if (!readerRef.current || !selectedCamera || scanMode !== 'camera') return;
 
@@ -55,6 +59,8 @@ export default function ScannerPage() {
                 setError(null);
                 setScanResult(null);
 
+                readerRef.current.reset();
+
                 await readerRef.current.decodeFromVideoDevice(
                     selectedCamera,
                     videoRef.current,
@@ -63,13 +69,15 @@ export default function ScannerPage() {
                             setScanResult(result.getText());
                             stopScanner();
                         }
-                        if (err && !(err.name === 'NotFoundException')) {
-                            setError(err.message || 'Scanning error');
+                        if (err) {
+                            if (err.name !== 'NotFoundException') {
+                                setError('Scanning error: ' + (err.message || err.name));
+                            }
                         }
                     }
                 );
             } catch (err) {
-                setError(`Camera error: ${err.message}`);
+                setError('Failed to start camera: ' + err.message);
                 setIsScanning(false);
             }
         };
@@ -107,7 +115,7 @@ export default function ScannerPage() {
             if (err.name === 'NotFoundException') {
                 setError('No barcode found in the image');
             } else {
-                setError(`Scan failed: ${err.message}`);
+                setError('Scan failed: ' + err.message);
             }
         } finally {
             URL.revokeObjectURL(fileUrl);
@@ -172,7 +180,6 @@ export default function ScannerPage() {
                         </div>
                     )}
 
-                    {/* Camera view */}
                     {scanMode === 'camera' && (
                         <div className="mb-6">
                             <div className="relative bg-black rounded-xl overflow-hidden aspect-[4/3]">
@@ -183,7 +190,6 @@ export default function ScannerPage() {
                                     playsInline
                                 />
 
-                                {/* Scanner overlay */}
                                 <div className="absolute inset-0 flex items-center justify-center">
                                     <div className="border-2 border-red-500 rounded-lg w-64 h-64 relative">
                                         <div className="absolute -top-0.5 -left-0.5 w-6 h-6 border-t-2 border-l-2 border-red-500"></div>
@@ -269,7 +275,6 @@ export default function ScannerPage() {
                         </div>
                     )}
 
-                    {/* Instructions */}
                     <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
                         <h3 className="font-semibold text-blue-800 mb-2">How to scan:</h3>
                         <ul className="text-sm text-blue-700 list-disc pl-5 space-y-1">

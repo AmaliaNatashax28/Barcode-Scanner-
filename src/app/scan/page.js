@@ -8,20 +8,26 @@ export default function ScannerPage() {
     const [cameras, setCameras] = useState([]);
     const [selectedCamera, setSelectedCamera] = useState(null);
     const [scanMode, setScanMode] = useState('camera');
+    const [isLoading, setIsLoading] = useState(false);
     const scannerRef = useRef(null);
     const scannerContainerRef = useRef(null);
 
     useEffect(() => {
         const getCameras = async () => {
             try {
+                // First request camera permission
+                await navigator.mediaDevices.getUserMedia({ video: true });
+
                 const devices = await navigator.mediaDevices.enumerateDevices();
                 const videoDevices = devices.filter(device => device.kind === 'videoinput');
+                console.log('Available cameras:', videoDevices);
                 setCameras(videoDevices);
                 if (videoDevices.length > 0) {
                     setSelectedCamera(videoDevices[0].deviceId);
                 }
             } catch (err) {
-                setError('Camera access error: ' + (err).message);
+                console.error('Camera access error:', err);
+                setError('Camera access error: ' + err.message + '. Please allow camera access and refresh the page.');
             }
         };
 
@@ -29,40 +35,62 @@ export default function ScannerPage() {
     }, []);
 
     useEffect(() => {
-        if (scanMode !== 'camera' || !selectedCamera || !scannerContainerRef.current) return;
+        if (scanMode !== 'camera' || !selectedCamera || !scannerContainerRef.current) {
+            console.log('Scanner conditions not met:', { scanMode, selectedCamera, hasContainer: !!scannerContainerRef.current });
+            return;
+        }
 
         const initScanner = async () => {
+            setIsLoading(true);
             try {
+                console.log('Initializing scanner with camera:', selectedCamera);
+
                 if (scannerRef.current && scannerRef.current.isScanning) {
-                    scannerRef.current.stop();
+                    await scannerRef.current.stop();
                 }
 
                 const html5Qrcode = new Html5Qrcode(scannerContainerRef.current.id);
                 scannerRef.current = html5Qrcode;
 
+                const config = {
+                    fps: 10,
+                    qrbox: { width: 250, height: 250 }
+                };
+
                 await html5Qrcode.start(
                     { deviceId: { exact: selectedCamera } },
-                    { fps: 10 },
+                    config,
                     (decodedText) => {
+                        console.log('Scan successful:', decodedText);
                         setScanResult(decodedText);
                         html5Qrcode.stop();
                     },
                     (errorMessage) => {
-                        if (!errorMessage.includes('No QR code detected')) {
-                            setError(`Scan error: ${errorMessage}`);
+                        // Only log non-routine errors
+                        if (!errorMessage.includes('No QR code detected') && !errorMessage.includes('No barcode detected')) {
+                            console.log('Scan error:', errorMessage);
                         }
                     }
                 );
+
+                console.log('Scanner started successfully');
+                setError(null); // Clear any previous errors
             } catch (err) {
-                setError('Scanner initialization failed: ' + (err).message);
+                console.error('Scanner initialization failed:', err);
+                setError('Scanner initialization failed: ' + err.message + '. Make sure camera permission is granted.');
+            } finally {
+                setIsLoading(false);
             }
         };
 
-        initScanner();
+        // Add a small delay to ensure DOM is ready
+        setTimeout(() => {
+            initScanner();
+        }, 100);
 
         return () => {
             if (scannerRef.current?.isScanning) {
-                scannerRef.current.stop();
+                scannerRef.current.stop().catch(console.error);
             }
         };
     }, [selectedCamera, scanMode]);
@@ -138,11 +166,18 @@ export default function ScannerPage() {
             )}
 
             {scanMode === 'camera' && (
-                <div
-                    id="reader"
-                    ref={scannerContainerRef}
-                    className="w-full h-64 bg-gray-100 rounded-md overflow-hidden"
-                />
+                <div>
+                    {isLoading && (
+                        <div className="mb-4 p-3 bg-blue-100 text-blue-700 rounded-md">
+                            Initializing camera...
+                        </div>
+                    )}
+                    <div
+                        id="reader"
+                        ref={scannerContainerRef}
+                        className="w-full h-64 bg-gray-100 rounded-md overflow-hidden"
+                    />
+                </div>
             )}
 
             {error && (

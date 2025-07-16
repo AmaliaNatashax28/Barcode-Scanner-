@@ -14,14 +14,22 @@ export default function ScannerPage() {
     useEffect(() => {
         const getCameras = async () => {
             try {
+                console.log('Requesting camera permission...');
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+
+                stream.getTracks().forEach(track => track.stop());
+
                 const devices = await navigator.mediaDevices.enumerateDevices();
                 const videoDevices = devices.filter(device => device.kind === 'videoinput');
+                console.log('Found cameras:', videoDevices);
+
                 setCameras(videoDevices);
                 if (videoDevices.length > 0) {
                     setSelectedCamera(videoDevices[0].deviceId);
                 }
             } catch (err) {
-                setError('Failed to access cameras: ' + err.message);
+                console.error('Camera permission error:', err);
+                setError('Camera permission denied or not available: ' + err.message);
             }
         };
 
@@ -29,44 +37,76 @@ export default function ScannerPage() {
     }, []);
 
     useEffect(() => {
-        if (!selectedCamera || scanMode !== 'camera') return;
+        if (!selectedCamera || scanMode !== 'camera') {
+            console.log('Scanner not starting:', { selectedCamera, scanMode });
+            return;
+        }
 
         const startScanner = async () => {
-            try {
-                if (scannerRef.current && scannerRef.current.isScanning) {
-                    scannerRef.current.stop().catch(() => { });
-                }
+            console.log('Starting scanner with camera:', selectedCamera);
+            setIsScanning(false);
 
+            try {
+                if (scannerRef.current) {
+                    try {
+                        if (scannerRef.current.isScanning) {
+                            await scannerRef.current.stop();
+                        }
+                        await scannerRef.current.clear();
+                    } catch (cleanupErr) {
+                        console.log('Cleanup error (ignoring):', cleanupErr);
+                    }
+                }
                 const html5Qrcode = new Html5Qrcode('reader');
                 scannerRef.current = html5Qrcode;
 
+                const config = {
+                    fps: 10,
+                    qrbox: { width: 250, height: 250 },
+                    aspectRatio: 1.0
+                };
+
+                console.log('Attempting to start camera...');
                 await html5Qrcode.start(
                     { deviceId: { exact: selectedCamera } },
-                    { fps: 10, aspectRatio: 1 },
+                    config,
                     (decodedText) => {
+                        console.log('Scan successful:', decodedText);
                         setScanResult(decodedText);
-                        html5Qrcode.stop();
+                        html5Qrcode.stop().catch(console.error);
                         setIsScanning(false);
                     },
                     (errorMessage) => {
-                        if (!errorMessage.includes('No QR code detected')) {
-                            setError('Scan error: ' + errorMessage);
+                        if (!errorMessage.includes('No QR code detected') &&
+                            !errorMessage.includes('No barcode detected') &&
+                            !errorMessage.includes('QR code parse error')) {
+                            console.log('Scan error:', errorMessage);
                         }
                     }
                 );
+
+                console.log('Scanner started successfully');
                 setIsScanning(true);
                 setError(null);
             } catch (err) {
-                setError('Scanner failed to start: ' + err.message);
+                console.error('Scanner failed to start:', err);
+                setError('Camera failed to start: ' + err.message + '. Please check camera permissions and try again.');
                 setIsScanning(false);
             }
         };
 
-        startScanner();
+        const timeoutId = setTimeout(startScanner, 100);
 
         return () => {
-            if (scannerRef.current && scannerRef.current.isScanning) {
-                scannerRef.current.stop().catch(() => { });
+            clearTimeout(timeoutId);
+            if (scannerRef.current) {
+                try {
+                    if (scannerRef.current.isScanning) {
+                        scannerRef.current.stop().catch(console.error);
+                    }
+                } catch (err) {
+                    console.log('Cleanup error on unmount:', err);
+                }
                 setIsScanning(false);
             }
         };

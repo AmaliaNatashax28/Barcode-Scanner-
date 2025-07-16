@@ -119,11 +119,25 @@ export default function ScannerPage() {
         if (!event.target.files?.length) return;
 
         const file = event.target.files[0];
+
         try {
-            const result = await Html5Qrcode.scanFile(file, false);
-            setScanResult(result);
+            console.log('Processing uploaded file:', file.name);
+
+            const reader = new FileReader();
+
+            reader.onload = (e) => {
+                setError('File scanning is not fully supported yet. Please use camera mode for best results. Try positioning the barcode in front of your camera.');
+            };
+
+            reader.onerror = () => {
+                setError('Failed to read the uploaded file.');
+            };
+
+            reader.readAsDataURL(file);
+
         } catch (err) {
-            setError('Scan failed: ' + err.message);
+            console.error('File upload error:', err);
+            setError('Failed to process image: ' + err.message);
         }
     };
 

@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@zxing/browser": "^0.1.5",
     "html5-qrcode": "^2.3.8",
     "next": "15.3.4",
     "react": "^19.0.0",
